@@ -1,28 +1,8 @@
 package com.example.dexel.camera;
 
-import android.Manifest;
-import android.app.Activity;
-import android.content.Context;
-import android.content.pm.PackageManager;
-import android.graphics.SurfaceTexture;
 import android.hardware.camera2.CameraAccessException;
-import android.hardware.camera2.CameraCaptureSession;
-import android.hardware.camera2.CameraDevice;
-import android.hardware.camera2.CameraManager;
-import android.support.annotation.IntDef;
-import android.support.annotation.NonNull;
-import android.support.v4.app.ActivityCompat;
-import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
-import android.util.Log;
-import android.view.Surface;
-import android.view.SurfaceView;
-import android.widget.TextView;
-
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.List;
+import android.support.v7.app.AppCompatActivity;
 
 public class MainActivity extends AppCompatActivity {
     private final static String TAG = MainActivity.class.getSimpleName();
@@ -35,6 +15,11 @@ public class MainActivity extends AppCompatActivity {
 
 
         CameraHandler cm = new CameraHandler(this);
+        try {
+            cm.openCamera();
+        } catch (CameraAccessException e) {
+            e.printStackTrace();
+        }
 
 
     }
