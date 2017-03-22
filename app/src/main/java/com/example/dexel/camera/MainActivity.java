@@ -1,7 +1,6 @@
 package com.example.dexel.camera;
 
 import android.Manifest;
-import android.app.Activity;
 import android.content.Context;
 import android.content.pm.PackageManager;
 import android.graphics.SurfaceTexture;
@@ -10,7 +9,9 @@ import android.hardware.camera2.CameraCaptureSession;
 import android.hardware.camera2.CameraDevice;
 import android.hardware.camera2.CameraManager;
 import android.hardware.camera2.CaptureRequest;
+import android.media.MediaRecorder;
 import android.os.Bundle;
+import android.os.Environment;
 import android.support.annotation.NonNull;
 import android.support.v4.app.ActivityCompat;
 import android.support.v7.app.AppCompatActivity;
@@ -19,19 +20,31 @@ import android.view.Surface;
 import android.view.TextureView;
 import android.widget.Toast;
 
+import java.io.File;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
 public class MainActivity extends AppCompatActivity {
     private final static String TAG = MainActivity.class.getSimpleName();
-    private CameraDevice c = null;
-    private Context mContext = this;
-    private CameraDevice cameraDevice = null;
+    private CameraDevice mCamera = null;
     Surface surface = null;
     TextureView textureView = null;
+    MediaRecorder mRecorder = null;
+    CameraCaptureSession mCameraCaptureSession = null;
+
+    private final static String HOST_IP = "198.168.0.25";
+    private final static int HOST_PORT = 7000;
+    private Thread mBackgroundThread = null;
 
     private final static int MY_PERMISSIONS_CAMERA_PERMISSIONS = 1;
+    private final static int MY_INTERNET_PERMISSIONS = 2;
+    private final static int MY_STORAGE_PERMISSIONS = 3;
+
+    File dir = new File(Environment.getExternalStorageDirectory().getAbsolutePath()
+            , "Streamer");
+    final File outputFile = new File(dir.getAbsolutePath(), "recording.mp4");
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -50,79 +63,157 @@ public class MainActivity extends AppCompatActivity {
             }
             @Override
             public boolean onSurfaceTextureDestroyed(SurfaceTexture surface) {
-                return false;
+                return true;
             }
             @Override
             public void onSurfaceTextureUpdated(SurfaceTexture surface) {
             }
         });
+
     }
 
-    private final CameraDevice.StateCallback stateCallback = new CameraDevice.StateCallback() {
-        @Override
-        public void onOpened(@NonNull CameraDevice camera) {
-            Log.d(TAG, "CameraState callback onOpened is called");
-            cameraDevice = camera;
-            createPreview();
+    private void checkPermissions(){
+        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
+                != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.CAMERA},
+                    MY_PERMISSIONS_CAMERA_PERMISSIONS);
         }
-
-        @Override
-        public void onDisconnected(@NonNull CameraDevice camera) {
-            Log.d(TAG, "CameraState callback onOpened is called");
+        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.INTERNET)
+                != PackageManager.PERMISSION_GRANTED){
+            ActivityCompat.requestPermissions(this, new String[] {Manifest.permission.INTERNET},
+                    MY_INTERNET_PERMISSIONS);
         }
-
-        @Override
-        public void onError(@NonNull CameraDevice camera, int error) {
-            Log.d(TAG, "CameraState callback onOpened is called");
+        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                != PackageManager.PERMISSION_GRANTED){
+            ActivityCompat.requestPermissions(this, new String[] {Manifest.permission.WRITE_EXTERNAL_STORAGE},
+                    MY_STORAGE_PERMISSIONS);
         }
-    };
+    }
 
+    @Override
+    protected void onStart() {
+        super.onStart();
+        mBackgroundThread = new Thread(new Runnable() {
+            public void run() {
+                startRecord();
+            }
+        });
+        mBackgroundThread.start();
+    }
 
+    private void startRecord(){
+        Log.i(TAG, "Started recording");
+        mRecorder = new MediaRecorder();
+        try {
+            //Socket socket = new Socket(HOST_IP, HOST_PORT);
+            mRecorder.setVideoSource(MediaRecorder.VideoSource.SURFACE);
+            mRecorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4);
+            mRecorder.setVideoEncoder(MediaRecorder.VideoEncoder.H264);
+            //mRecorder.setOutputFile(ParcelFileDescriptor.fromSocket(socket).getFileDescriptor());
+            Log.d(TAG, "File: " + outputFile.getAbsolutePath());
+            if(!dir.exists()){
+                dir.mkdir();
+            }
+            mRecorder.setOutputFile(outputFile.getAbsolutePath());
+            //mRecorder.setPreviewDisplay(new Surface(textureView.getSurfaceTexture()));
+
+            mRecorder.prepare();
+            mRecorder.getSurface();
+            mRecorder.start();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private void stopRecord() {
+        Log.i(TAG, "Stopped recording");
+        if (mRecorder != null) {
+            mRecorder.release();
+            mRecorder = null;
+            try {
+                mBackgroundThread.join();
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        }
+    }
+
+    @Override
+    protected void onStop() {
+        super.onStop();
+        stopRecord();
+        closeCamera();
+    }
+
+    private void closeCamera(){
+        if (mCamera != null){
+            mCamera.close();
+        }
+        if (mCameraCaptureSession != null){
+            mCameraCaptureSession.close();
+        }
+    }
 
     private void openCamera() {
-        CameraManager cm = (CameraManager) mContext.getSystemService(Context.CAMERA_SERVICE);
+        CameraManager cm = (CameraManager) this.getSystemService(Context.CAMERA_SERVICE);
 
-        if (ActivityCompat.checkSelfPermission((Activity) mContext, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
-            ActivityCompat.requestPermissions((Activity) mContext,
+        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(this,
                     new String[]{Manifest.permission.CAMERA},
                     MY_PERMISSIONS_CAMERA_PERMISSIONS);
             return;
         }
 
-
         try {
             String[] cameras = cm.getCameraIdList();
             List<String> a = new ArrayList<String>(Arrays.asList(cameras));
-            cm.openCamera(cameras[0], stateCallback, null);
+            cm.openCamera(cameras[0], new CameraDevice.StateCallback() {
+                @Override
+                public void onOpened(@NonNull CameraDevice camera) {
+                    Log.d(TAG, "CameraState callback onOpened is called");
+                    mCamera = camera;
+                    try {
+                        createPreview();
+                    } catch (CameraAccessException e) {
+                        e.printStackTrace();
+                    }
+                }
+
+                @Override
+                public void onDisconnected(@NonNull CameraDevice camera) {
+                    Log.d(TAG, "CameraState callback onDisconnected is called");
+                    camera.close();
+                    mCamera = null;
+                }
+
+                @Override
+                public void onError(@NonNull CameraDevice camera, int error) {
+                    Log.d(TAG, "CameraState callback onError is called");
+                }
+            }, null);
             Log.d("Cameras", a.toString());
+
         } catch (CameraAccessException e) {
             e.printStackTrace();
         }
 
     }
 
-    private void displayPreview(CameraCaptureSession session) throws CameraAccessException {
-        CaptureRequest.Builder captureRequestBuilder = cameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW);
-        captureRequestBuilder.addTarget(surface);
-        try {
-            session.setRepeatingRequest(captureRequestBuilder.build(), null, null);
-        } catch (CameraAccessException e) {
-            e.printStackTrace();
-        }
-    }
-
-    private void createPreview(){
+    private void createPreview() throws CameraAccessException {
 
         SurfaceTexture surfaceTexture = textureView.getSurfaceTexture();
         surfaceTexture.setDefaultBufferSize(500,500);
         surface = new Surface(surfaceTexture);
         try {
-            cameraDevice.createCaptureSession(Arrays.asList(surface), new CameraCaptureSession.StateCallback() {
+            mCamera.createCaptureSession(Arrays.asList(surface), new CameraCaptureSession.StateCallback() {
                 @Override
                 public void onConfigured(@NonNull CameraCaptureSession session) {
-                    //display preview
                     try {
-                        displayPreview(session);
+                        CaptureRequest.Builder captureRequestBuilder = mCamera.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW);
+                        captureRequestBuilder.addTarget(surface);
+
+                        mCameraCaptureSession = session;
+                        mCameraCaptureSession.setRepeatingRequest(captureRequestBuilder.build(), null, null);
                     } catch (CameraAccessException e) {
                         e.printStackTrace();
                     }
@@ -144,7 +235,7 @@ public class MainActivity extends AppCompatActivity {
             case MY_PERMISSIONS_CAMERA_PERMISSIONS: {
                 if (grantResults.length > 0
                         && grantResults[0] == PackageManager.PERMISSION_DENIED) {
-                    Toast.makeText(mContext, "Permission required", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(this, "Permission required", Toast.LENGTH_SHORT).show();
                     finish();
                 }
                 return;
@@ -152,9 +243,6 @@ public class MainActivity extends AppCompatActivity {
         }
 
     }
-
-
-
 
     /**
          * A native method that is implemented by the 'native-lib' native library,
