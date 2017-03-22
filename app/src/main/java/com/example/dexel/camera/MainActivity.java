@@ -22,9 +22,7 @@ import android.widget.Toast;
 
 import java.io.File;
 import java.io.IOException;
-import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.List;
 
 public class MainActivity extends AppCompatActivity {
     private final static String TAG = MainActivity.class.getSimpleName();
@@ -51,20 +49,23 @@ public class MainActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
         textureView = (TextureView) findViewById(R.id.textureView);
-        textureView.setSurfaceTextureListener( new TextureView.SurfaceTextureListener() {
+        textureView.setSurfaceTextureListener(new TextureView.SurfaceTextureListener() {
             @Override
             public void onSurfaceTextureAvailable(SurfaceTexture surface, int width, int height) {
                 //open your camera here
                 openCamera();
             }
+
             @Override
             public void onSurfaceTextureSizeChanged(SurfaceTexture surface, int width, int height) {
                 // Transform you image captured size according to the surface width and height
             }
+
             @Override
             public boolean onSurfaceTextureDestroyed(SurfaceTexture surface) {
                 return true;
             }
+
             @Override
             public void onSurfaceTextureUpdated(SurfaceTexture surface) {
             }
@@ -72,20 +73,30 @@ public class MainActivity extends AppCompatActivity {
 
     }
 
-    private void checkPermissions(){
+    private void checkPermissions() {
+        Log.d(TAG, "Checking permissions");
         if (ActivityCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
                 != PackageManager.PERMISSION_GRANTED) {
+            Log.d(TAG, "Granting camera permissions");
             ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.CAMERA},
                     MY_PERMISSIONS_CAMERA_PERMISSIONS);
         }
         if (ActivityCompat.checkSelfPermission(this, Manifest.permission.INTERNET)
-                != PackageManager.PERMISSION_GRANTED){
-            ActivityCompat.requestPermissions(this, new String[] {Manifest.permission.INTERNET},
+                != PackageManager.PERMISSION_GRANTED) {
+            Log.d(TAG, "Granting network permissions");
+            ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.INTERNET},
                     MY_INTERNET_PERMISSIONS);
         }
         if (ActivityCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE)
-                != PackageManager.PERMISSION_GRANTED){
-            ActivityCompat.requestPermissions(this, new String[] {Manifest.permission.WRITE_EXTERNAL_STORAGE},
+                != PackageManager.PERMISSION_GRANTED) {
+            Log.d(TAG, "Granting write permissions");
+            ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE},
+                    MY_STORAGE_PERMISSIONS);
+        }
+        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE)
+                != PackageManager.PERMISSION_GRANTED) {
+            Log.d(TAG, "Granting read permissions");
+            ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.READ_EXTERNAL_STORAGE},
                     MY_STORAGE_PERMISSIONS);
         }
     }
@@ -101,17 +112,19 @@ public class MainActivity extends AppCompatActivity {
         mBackgroundThread.start();
     }
 
-    private void startRecord(){
+    private void startRecord() {
         Log.i(TAG, "Started recording");
         mRecorder = new MediaRecorder();
         try {
             //Socket socket = new Socket(HOST_IP, HOST_PORT);
             mRecorder.setVideoSource(MediaRecorder.VideoSource.SURFACE);
+            //mRecorder.setVideoSource(MediaRecorder.VideoSource.CAMERA);
+            mRecorder.setVideoEncodingBitRate(1000);
             mRecorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4);
             mRecorder.setVideoEncoder(MediaRecorder.VideoEncoder.H264);
             //mRecorder.setOutputFile(ParcelFileDescriptor.fromSocket(socket).getFileDescriptor());
             Log.d(TAG, "File: " + outputFile.getAbsolutePath());
-            if(!dir.exists()){
+            if (!dir.exists()) {
                 dir.mkdir();
             }
             mRecorder.setOutputFile(outputFile.getAbsolutePath());
@@ -128,6 +141,7 @@ public class MainActivity extends AppCompatActivity {
     private void stopRecord() {
         Log.i(TAG, "Stopped recording");
         if (mRecorder != null) {
+            mRecorder.stop();
             mRecorder.release();
             mRecorder = null;
             try {
@@ -145,28 +159,24 @@ public class MainActivity extends AppCompatActivity {
         closeCamera();
     }
 
-    private void closeCamera(){
-        if (mCamera != null){
+    private void closeCamera() {
+        if (mCamera != null) {
             mCamera.close();
+            mCamera = null;
         }
-        if (mCameraCaptureSession != null){
+        if (mCameraCaptureSession != null) {
             mCameraCaptureSession.close();
+            mCameraCaptureSession = null;
         }
     }
 
     private void openCamera() {
         CameraManager cm = (CameraManager) this.getSystemService(Context.CAMERA_SERVICE);
-
-        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
-            ActivityCompat.requestPermissions(this,
-                    new String[]{Manifest.permission.CAMERA},
-                    MY_PERMISSIONS_CAMERA_PERMISSIONS);
-            return;
-        }
+        checkPermissions();
 
         try {
             String[] cameras = cm.getCameraIdList();
-            List<String> a = new ArrayList<String>(Arrays.asList(cameras));
+            //noinspection MissingPermission
             cm.openCamera(cameras[0], new CameraDevice.StateCallback() {
                 @Override
                 public void onOpened(@NonNull CameraDevice camera) {
@@ -191,7 +201,7 @@ public class MainActivity extends AppCompatActivity {
                     Log.d(TAG, "CameraState callback onError is called");
                 }
             }, null);
-            Log.d("Cameras", a.toString());
+            Log.d("Cameras", cameras.toString());
 
         } catch (CameraAccessException e) {
             e.printStackTrace();
@@ -205,12 +215,13 @@ public class MainActivity extends AppCompatActivity {
         surfaceTexture.setDefaultBufferSize(500,500);
         surface = new Surface(surfaceTexture);
         try {
-            mCamera.createCaptureSession(Arrays.asList(surface), new CameraCaptureSession.StateCallback() {
+            mCamera.createCaptureSession(Arrays.asList(mRecorder.getSurface(), surface), new CameraCaptureSession.StateCallback() {
                 @Override
                 public void onConfigured(@NonNull CameraCaptureSession session) {
                     try {
                         CaptureRequest.Builder captureRequestBuilder = mCamera.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW);
                         captureRequestBuilder.addTarget(surface);
+                        captureRequestBuilder.addTarget(mRecorder.getSurface());
 
                         mCameraCaptureSession = session;
                         mCameraCaptureSession.setRepeatingRequest(captureRequestBuilder.build(), null, null);
@@ -233,12 +244,22 @@ public class MainActivity extends AppCompatActivity {
     public void onRequestPermissionsResult(int requestCode, String permissions[], int[] grantResults) {
         switch(requestCode){
             case MY_PERMISSIONS_CAMERA_PERMISSIONS: {
-                if (grantResults.length > 0
-                        && grantResults[0] == PackageManager.PERMISSION_DENIED) {
-                    Toast.makeText(this, "Permission required", Toast.LENGTH_SHORT).show();
+                if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_DENIED) {
+                    Toast.makeText(this, permissions[0] + " required", Toast.LENGTH_SHORT).show();
                     finish();
                 }
-                return;
+            }
+            case MY_INTERNET_PERMISSIONS: {
+                if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_DENIED) {
+                    Toast.makeText(this, permissions[0] + " required", Toast.LENGTH_SHORT).show();
+                    finish();
+                }
+            }
+            case MY_STORAGE_PERMISSIONS: {
+                if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_DENIED) {
+                    Toast.makeText(this, permissions[0] + " required", Toast.LENGTH_SHORT).show();
+                    finish();
+                }
             }
         }
 
