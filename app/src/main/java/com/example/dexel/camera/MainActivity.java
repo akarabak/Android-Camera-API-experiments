@@ -18,7 +18,9 @@ import android.support.v7.app.AppCompatActivity;
 import android.util.Log;
 import android.view.Surface;
 import android.view.TextureView;
+import android.view.View;
 import android.widget.Toast;
+import android.widget.ToggleButton;
 
 import java.io.File;
 import java.io.IOException;
@@ -47,6 +49,8 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+
+        //Sets the view for this activity
         setContentView(R.layout.activity_main);
         textureView = (TextureView) findViewById(R.id.textureView);
         textureView.setSurfaceTextureListener(new TextureView.SurfaceTextureListener() {
@@ -104,18 +108,28 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onStart() {
         super.onStart();
-        mBackgroundThread = new Thread(new Runnable() {
-            public void run() {
-                startRecord();
+
+        final ToggleButton record = (ToggleButton) findViewById(R.id.record);
+        record.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if (record.isChecked()){
+                    //prepareRecord();
+                    mRecorder.start();;
+                }
+                else{
+                    stopRecord();
+                }
             }
         });
-        mBackgroundThread.start();
     }
 
-    private void startRecord() {
+    private void prepareRecord() {
         Log.i(TAG, "Started recording");
-        mRecorder = new MediaRecorder();
+        if (mRecorder == null)
+            mRecorder = new MediaRecorder();
         try {
+            //prepare recorder
             //Socket socket = new Socket(HOST_IP, HOST_PORT);
             mRecorder.setVideoSource(MediaRecorder.VideoSource.SURFACE);
             //mRecorder.setVideoSource(MediaRecorder.VideoSource.CAMERA);
@@ -128,11 +142,8 @@ public class MainActivity extends AppCompatActivity {
                 dir.mkdir();
             }
             mRecorder.setOutputFile(outputFile.getAbsolutePath());
-            //mRecorder.setPreviewDisplay(new Surface(textureView.getSurfaceTexture()));
-
             mRecorder.prepare();
-            mRecorder.getSurface();
-            mRecorder.start();
+
         } catch (IOException e) {
             e.printStackTrace();
         }
@@ -142,20 +153,15 @@ public class MainActivity extends AppCompatActivity {
         Log.i(TAG, "Stopped recording");
         if (mRecorder != null) {
             mRecorder.stop();
-            mRecorder.release();
-            mRecorder = null;
-            try {
-                mBackgroundThread.join();
-            } catch (InterruptedException e) {
-                e.printStackTrace();
-            }
+            //mRecorder.release();
+            //mRecorder = null;
         }
     }
 
     @Override
     protected void onStop() {
         super.onStop();
-        stopRecord();
+        mRecorder.release();
         closeCamera();
     }
 
@@ -173,6 +179,8 @@ public class MainActivity extends AppCompatActivity {
     private void openCamera() {
         CameraManager cm = (CameraManager) this.getSystemService(Context.CAMERA_SERVICE);
         checkPermissions();
+
+        prepareRecord();
 
         try {
             String[] cameras = cm.getCameraIdList();
@@ -220,8 +228,8 @@ public class MainActivity extends AppCompatActivity {
                 public void onConfigured(@NonNull CameraCaptureSession session) {
                     try {
                         CaptureRequest.Builder captureRequestBuilder = mCamera.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW);
-                        captureRequestBuilder.addTarget(surface);
                         captureRequestBuilder.addTarget(mRecorder.getSurface());
+                        captureRequestBuilder.addTarget(surface);
 
                         mCameraCaptureSession = session;
                         mCameraCaptureSession.setRepeatingRequest(captureRequestBuilder.build(), null, null);
