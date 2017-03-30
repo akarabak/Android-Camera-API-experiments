@@ -18,7 +18,7 @@ import android.support.v7.app.AppCompatActivity;
 import android.util.Log;
 import android.view.Surface;
 import android.view.TextureView;
-import android.view.View;
+import android.widget.CompoundButton;
 import android.widget.Toast;
 import android.widget.ToggleButton;
 
@@ -110,14 +110,14 @@ public class MainActivity extends AppCompatActivity {
         super.onStart();
 
         final ToggleButton record = (ToggleButton) findViewById(R.id.record);
-        record.setOnClickListener(new View.OnClickListener() {
+        record.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
             @Override
-            public void onClick(View v) {
-                if (record.isChecked()){
+            public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
+                if (isChecked){
                     //prepareRecord();
-                    mRecorder.start();;
+                    mRecorder.start();
                 }
-                else{
+                else {
                     stopRecord();
                 }
             }
@@ -139,7 +139,9 @@ public class MainActivity extends AppCompatActivity {
             //mRecorder.setOutputFile(ParcelFileDescriptor.fromSocket(socket).getFileDescriptor());
             Log.d(TAG, "File: " + outputFile.getAbsolutePath());
             if (!dir.exists()) {
-                dir.mkdir();
+                if (!dir.mkdir()){
+                    Log.e(TAG, "Directory failed to create");
+                }
             }
             mRecorder.setOutputFile(outputFile.getAbsolutePath());
             mRecorder.prepare();
@@ -209,7 +211,7 @@ public class MainActivity extends AppCompatActivity {
                     Log.d(TAG, "CameraState callback onError is called");
                 }
             }, null);
-            Log.d("Cameras", cameras.toString());
+            Log.d("Cameras", Arrays.asList(cameras).toString());
 
         } catch (CameraAccessException e) {
             e.printStackTrace();
@@ -249,7 +251,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     @Override
-    public void onRequestPermissionsResult(int requestCode, String permissions[], int[] grantResults) {
+    public void onRequestPermissionsResult(int requestCode, @NonNull String permissions[], @NonNull int[] grantResults) {
         switch(requestCode){
             case MY_PERMISSIONS_CAMERA_PERMISSIONS: {
                 if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_DENIED) {
