@@ -26,6 +26,9 @@ import java.io.File;
 import java.io.IOException;
 import java.util.Arrays;
 
+
+//So far -> recreate mediaRecorder and captureSession after each toggle
+
 public class MainActivity extends AppCompatActivity {
     private final static String TAG = MainActivity.class.getSimpleName();
     private CameraDevice mCamera = null;
@@ -77,6 +80,114 @@ public class MainActivity extends AppCompatActivity {
 
     }
 
+    private void openCamera() {
+        CameraManager cm = (CameraManager) this.getSystemService(Context.CAMERA_SERVICE);
+        checkPermissions();
+
+        prepareRecord();
+
+        try {
+            String[] cameras = cm.getCameraIdList();
+            //noinspection MissingPermission
+            cm.openCamera(cameras[0], new CameraDevice.StateCallback() {
+                @Override
+                public void onOpened(@NonNull CameraDevice camera) {
+                    Log.d(TAG, "CameraState callback onOpened is called");
+                    mCamera = camera;
+                    createPreview();
+                    //createPreviewSession();
+                    createCaptureSession();
+                }
+
+                @Override
+                public void onDisconnected(@NonNull CameraDevice camera) {
+                    Log.d(TAG, "CameraState callback onDisconnected is called");
+                    camera.close();
+                    mCamera = null;
+                }
+
+                @Override
+                public void onError(@NonNull CameraDevice camera, int error) {
+                    Log.d(TAG, "CameraState callback onError is called");
+                }
+            }, null);
+            Log.d("Cameras", Arrays.asList(cameras).toString());
+
+        } catch (CameraAccessException e) {
+            e.printStackTrace();
+        }
+
+    }
+
+
+    private void prepareRecord() {
+        Log.i(TAG, "Started recording");
+        if (mRecorder == null){
+            mRecorder = new MediaRecorder();
+            try {
+                //prepare recorder
+                //createPreview();
+                //Socket socket = new Socket(HOST_IP, HOST_PORT);
+                mRecorder.setVideoSource(MediaRecorder.VideoSource.SURFACE);
+                //mRecorder.setVideoSource(MediaRecorder.VideoSource.CAMERA);
+                mRecorder.setVideoEncodingBitRate(1000);
+                mRecorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4);
+                mRecorder.setVideoEncoder(MediaRecorder.VideoEncoder.H264);
+                //mRecorder.setOutputFile(ParcelFileDescriptor.fromSocket(socket).getFileDescriptor());
+                Log.d(TAG, "File: " + outputFile.getAbsolutePath());
+                if (!dir.exists()) {
+                    if (!dir.mkdir()){
+                        Log.e(TAG, "Directory failed to create");
+                    }
+                }
+                mRecorder.setOutputFile(outputFile.getAbsolutePath());
+                mRecorder.prepare();
+
+
+
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+    }
+
+    private void createPreview() {
+
+        SurfaceTexture surfaceTexture = textureView.getSurfaceTexture();
+        surfaceTexture.setDefaultBufferSize(500,500);
+        surface = new Surface(surfaceTexture);
+
+    }
+
+    private void createCaptureSession(){
+        try {
+            mCamera.createCaptureSession(Arrays.asList(mRecorder.getSurface(), surface), new CameraCaptureSession.StateCallback() {
+                @Override
+                public void onConfigured(@NonNull CameraCaptureSession session) {
+                    try {
+                        CaptureRequest.Builder captureRequestBuilder = mCamera.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW);
+                        captureRequestBuilder.addTarget(mRecorder.getSurface());
+                        captureRequestBuilder.addTarget(surface);
+
+                        mCameraCaptureSession = session;
+                        mCameraCaptureSession.setRepeatingRequest(captureRequestBuilder.build(), null, null);
+                    } catch (CameraAccessException e) {
+                        e.printStackTrace();
+                    }
+                }
+
+                @Override
+                public void onConfigureFailed(@NonNull CameraCaptureSession session) {
+                    Log.e(TAG, "configuring preview failed");
+                    mCameraCaptureSession = session;
+                }
+            }, null);
+        } catch (CameraAccessException e) {
+            e.printStackTrace();
+        }
+    }
+
+
     private void checkPermissions() {
         Log.d(TAG, "Checking permissions");
         if (ActivityCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
@@ -115,6 +226,7 @@ public class MainActivity extends AppCompatActivity {
             public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
                 if (isChecked){
                     //prepareRecord();
+                    //createCaptureSession();
                     mRecorder.start();
                 }
                 else {
@@ -124,39 +236,16 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
-    private void prepareRecord() {
-        Log.i(TAG, "Started recording");
-        if (mRecorder == null)
-            mRecorder = new MediaRecorder();
-        try {
-            //prepare recorder
-            //Socket socket = new Socket(HOST_IP, HOST_PORT);
-            mRecorder.setVideoSource(MediaRecorder.VideoSource.SURFACE);
-            //mRecorder.setVideoSource(MediaRecorder.VideoSource.CAMERA);
-            mRecorder.setVideoEncodingBitRate(1000);
-            mRecorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4);
-            mRecorder.setVideoEncoder(MediaRecorder.VideoEncoder.H264);
-            //mRecorder.setOutputFile(ParcelFileDescriptor.fromSocket(socket).getFileDescriptor());
-            Log.d(TAG, "File: " + outputFile.getAbsolutePath());
-            if (!dir.exists()) {
-                if (!dir.mkdir()){
-                    Log.e(TAG, "Directory failed to create");
-                }
-            }
-            mRecorder.setOutputFile(outputFile.getAbsolutePath());
-            mRecorder.prepare();
-
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-    }
 
     private void stopRecord() {
         Log.i(TAG, "Stopped recording");
         if (mRecorder != null) {
             mRecorder.stop();
-            //mRecorder.release();
-            //mRecorder = null;
+            mRecorder.release();
+            mRecorder = null;
+            prepareRecord();
+            createCaptureSession();
+            //createPreviewSession();
         }
     }
 
@@ -178,77 +267,6 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    private void openCamera() {
-        CameraManager cm = (CameraManager) this.getSystemService(Context.CAMERA_SERVICE);
-        checkPermissions();
-
-        prepareRecord();
-
-        try {
-            String[] cameras = cm.getCameraIdList();
-            //noinspection MissingPermission
-            cm.openCamera(cameras[0], new CameraDevice.StateCallback() {
-                @Override
-                public void onOpened(@NonNull CameraDevice camera) {
-                    Log.d(TAG, "CameraState callback onOpened is called");
-                    mCamera = camera;
-                    try {
-                        createPreview();
-                    } catch (CameraAccessException e) {
-                        e.printStackTrace();
-                    }
-                }
-
-                @Override
-                public void onDisconnected(@NonNull CameraDevice camera) {
-                    Log.d(TAG, "CameraState callback onDisconnected is called");
-                    camera.close();
-                    mCamera = null;
-                }
-
-                @Override
-                public void onError(@NonNull CameraDevice camera, int error) {
-                    Log.d(TAG, "CameraState callback onError is called");
-                }
-            }, null);
-            Log.d("Cameras", Arrays.asList(cameras).toString());
-
-        } catch (CameraAccessException e) {
-            e.printStackTrace();
-        }
-
-    }
-
-    private void createPreview() throws CameraAccessException {
-
-        SurfaceTexture surfaceTexture = textureView.getSurfaceTexture();
-        surfaceTexture.setDefaultBufferSize(500,500);
-        surface = new Surface(surfaceTexture);
-        try {
-            mCamera.createCaptureSession(Arrays.asList(mRecorder.getSurface(), surface), new CameraCaptureSession.StateCallback() {
-                @Override
-                public void onConfigured(@NonNull CameraCaptureSession session) {
-                    try {
-                        CaptureRequest.Builder captureRequestBuilder = mCamera.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW);
-                        captureRequestBuilder.addTarget(mRecorder.getSurface());
-                        captureRequestBuilder.addTarget(surface);
-
-                        mCameraCaptureSession = session;
-                        mCameraCaptureSession.setRepeatingRequest(captureRequestBuilder.build(), null, null);
-                    } catch (CameraAccessException e) {
-                        e.printStackTrace();
-                    }
-                }
-
-                @Override
-                public void onConfigureFailed(@NonNull CameraCaptureSession session) {
-                    Log.e(TAG, "configuring preview failed");
-                }
-            }, null);
-        } catch (CameraAccessException e) {
-            e.printStackTrace();
-        }
-    }
 
     @Override
     public void onRequestPermissionsResult(int requestCode, @NonNull String permissions[], @NonNull int[] grantResults) {
