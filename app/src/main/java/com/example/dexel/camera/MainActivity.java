@@ -23,6 +23,8 @@ import android.widget.Toast;
 import android.widget.ToggleButton;
 
 
+import org.opencv.android.OpenCVLoader;
+
 import java.io.File;
 import java.io.IOException;
 import java.util.Arrays;
@@ -52,11 +54,11 @@ public class MainActivity extends AppCompatActivity {
             , "Streamer");
     final File outputFile = new File(dir.getAbsolutePath());
 
-//    static {
-//        if (!OpenCVLoader.initDebug()){
-//            Log.d(TAG, "Open CV initialization error");
-//        }
-//    }
+    static {
+        if (!OpenCVLoader.initDebug()){
+            Log.d(TAG, "Open CV initialization error");
+        }
+    }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
