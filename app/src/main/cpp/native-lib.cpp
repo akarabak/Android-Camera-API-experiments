@@ -3,7 +3,7 @@
 
 extern "C"
 jstring
-Java_com_example_dexel_camera_MainActivity_stringFromJNI(
+Java_com_example_dexel_camera_ObjectDetection_stringFromJNI(
         JNIEnv* env,
         jobject /* this */) {
     std::string hello = "Hello from C++";

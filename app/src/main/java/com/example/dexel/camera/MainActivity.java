@@ -9,6 +9,9 @@ import android.hardware.camera2.CameraCaptureSession;
 import android.hardware.camera2.CameraDevice;
 import android.hardware.camera2.CameraManager;
 import android.hardware.camera2.CaptureRequest;
+import android.hardware.camera2.CaptureResult;
+import android.hardware.camera2.TotalCaptureResult;
+import android.hardware.camera2.params.Face;
 import android.media.MediaRecorder;
 import android.os.Bundle;
 import android.os.Environment;
@@ -18,15 +21,32 @@ import android.support.v7.app.AppCompatActivity;
 import android.util.Log;
 import android.view.Surface;
 import android.view.TextureView;
+import android.view.View;
+import android.view.WindowManager;
+import android.widget.Button;
 import android.widget.CompoundButton;
 import android.widget.Toast;
 import android.widget.ToggleButton;
 
 
+import org.opencv.android.BaseLoaderCallback;
+import org.opencv.android.CameraBridgeViewBase;
+import org.opencv.android.LoaderCallbackInterface;
 import org.opencv.android.OpenCVLoader;
+import org.opencv.android.Utils;
+import org.opencv.core.Mat;
+import org.opencv.core.MatOfRect;
+import org.opencv.core.Rect;
+import org.opencv.core.Size;
+import org.opencv.imgproc.Imgproc;
+import org.opencv.objdetect.CascadeClassifier;
 
 import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.util.Arrays;
 
 
@@ -47,27 +67,34 @@ public class MainActivity extends AppCompatActivity {
     private final static int MY_PERMISSIONS_CAMERA_PERMISSIONS = 1;
     private final static int MY_INTERNET_PERMISSIONS = 2;
     private final static int MY_STORAGE_PERMISSIONS = 3;
+    private int mCameraID = 0;
+    private CameraManager mCameraManager = null;
 
     private int recording = 0;
+
+
+    Mat mGray = null;
+    Mat mRgba = null;
+    File mCascade = null;
 
     File dir = new File(Environment.getExternalStorageDirectory().getAbsolutePath()
             , "Streamer");
     final File outputFile = new File(dir.getAbsolutePath());
 
-    static {
-        if (!OpenCVLoader.initDebug()){
-            Log.d(TAG, "Open CV initialization error");
-        }
-    }
-
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         checkPermissions();
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+
+        mCameraManager = (CameraManager) this.getSystemService(Context.CAMERA_SERVICE);
 
         //Sets the view for this activity
         setContentView(R.layout.activity_main);
         textureView = (TextureView) findViewById(R.id.textureView);
+
+
+        initializeDependencies();
 
         textureView.setSurfaceTextureListener(new TextureView.SurfaceTextureListener() {
             @Override
@@ -97,16 +124,51 @@ public class MainActivity extends AppCompatActivity {
 
     }
 
+    private void initializeDependencies() {
+        try{
+            InputStream is = getResources().openRawResource(R.raw.lbpcascade_frontalface);
+            mCascade = new File(getFilesDir(), "cascade_face.xml");
+            FileOutputStream os = null;
+            try {
+                os = new FileOutputStream(mCascade);
+            } catch (FileNotFoundException e) {
+                e.printStackTrace();
+            }
+            byte[] buffer = new byte[4096];
+            int bytesRead;
+            while ((bytesRead = is.read(buffer)) != -1){
+                os.write(buffer, 0, bytesRead);
+            }
+
+            is.close();
+            os.close();
+        }
+        catch (Exception e){
+            e.printStackTrace();
+        }
+
+    }
+
+    private void switchCamera() throws CameraAccessException {
+        mCameraID++;
+        String[] cameras = mCameraManager.getCameraIdList();
+        mCameraID %= cameras.length;
+        if (mCamera != null){
+            mCamera.close();
+            mCamera = null;
+        }
+        openCamera();
+    }
+
     private void openCamera() {
         while (ActivityCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED);
 
-
-        CameraManager cm = (CameraManager) this.getSystemService(Context.CAMERA_SERVICE);
-
         try {
-            String[] cameras = cm.getCameraIdList();
+            String[] cameras = mCameraManager.getCameraIdList();
             //noinspection MissingPermission
-            cm.openCamera(cameras[0], new CameraDevice.StateCallback() {
+
+
+            mCameraManager.openCamera(cameras[mCameraID], new CameraDevice.StateCallback() {
                 @Override
                 public void onOpened(@NonNull CameraDevice camera) {
                     Log.d(TAG, "CameraState callback onOpened is called");
@@ -132,8 +194,6 @@ public class MainActivity extends AppCompatActivity {
         } catch (CameraAccessException e) {
             e.printStackTrace();
         }
-
-
     }
 
     //Preview code ##################################################################
@@ -149,7 +209,7 @@ public class MainActivity extends AppCompatActivity {
 
                         //mCameraCaptureSession = session;
                         //mCameraCaptureSession.setRepeatingRequest(captureRequestBuilder.build(), null, null);
-                        session.setRepeatingRequest(captureRequestBuilder.build(), null, null);
+                        session.setRepeatingRequest(captureRequestBuilder.build(), captureCallback, null);
                     } catch (CameraAccessException e) {
                         e.printStackTrace();
                     }
@@ -188,6 +248,18 @@ public class MainActivity extends AppCompatActivity {
                 }
             }
         });
+        final Button switchButton = (Button) findViewById(R.id.switch_button);
+        switchButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                try {
+                    switchCamera();
+                } catch (CameraAccessException e) {
+                    e.printStackTrace();
+                }
+            }
+        });
+
     }
 
     //Recording code #################################################
@@ -223,10 +295,42 @@ public class MainActivity extends AppCompatActivity {
             }
         }
     }
+    private int frameNum = 0;
+    CameraCaptureSession.CaptureCallback captureCallback = new CameraCaptureSession.CaptureCallback() {
+
+            @Override
+            public void onCaptureCompleted(final CameraCaptureSession session, CaptureRequest request,
+                                           TotalCaptureResult result) {
+                if (frameNum == 0) {
+                    //Log.d(TAG, "new thread");
+                    Thread t = new Thread(new Runnable() {
+                        @Override
+                        public void run() {
+                            Mat toRecognize = new Mat();
+
+
+                            Utils.bitmapToMat(textureView.getBitmap(), toRecognize);
+                            ImageProcessing(toRecognize);
+                        }
+
+                    }
+                    );
+                    t.run();
+                    frameNum++;
+                }
+                else{
+                    //Log.d(TAG, "increase counter");
+                    frameNum = (frameNum + 1) % 60;
+                }
+
+
+            }
+    };
 
     private void createCaptureSession(){
         try {
             mCamera.createCaptureSession(Arrays.asList(mRecorder.getSurface(), surface), new CameraCaptureSession.StateCallback() {
+
                 @Override
                 public void onConfigured(@NonNull CameraCaptureSession session) {
                     try {
@@ -236,7 +340,7 @@ public class MainActivity extends AppCompatActivity {
 
                         //mCameraCaptureSession = session;
                         //mCameraCaptureSession.setRepeatingRequest(captureRequestBuilder.build(), null, null);
-                        session.setRepeatingRequest(captureRequestBuilder.build(), null, null);
+                        session.setRepeatingRequest(captureRequestBuilder.build(), captureCallback, null);
                     } catch (CameraAccessException e) {
                         e.printStackTrace();
                     }
@@ -336,14 +440,52 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    /**
-         * A native method that is implemented by the 'native-lib' native library,
-         * which is packaged with this application.
-         */
-    public native String stringFromJNI();
 
+    private Mat ImageProcessing(Mat rgb){
+        mGray = new Mat();
+        if (rgb != null && !rgb.empty()){
+            Imgproc.cvtColor(rgb, mGray, Imgproc.COLOR_RGB2GRAY);
+            mRgba = rgb;
+
+            try {
+                CascadeClassifier classifier = new CascadeClassifier(mCascade.getAbsolutePath());
+                MatOfRect detectedFaces = new MatOfRect();
+                classifier.detectMultiScale(mGray, detectedFaces, 1.1, 10, 0, new Size(20,20), new Size(mGray.width(), mGray.height()));
+
+
+                for(Rect f : detectedFaces.toList()){
+                    Log.i("Face Detected: ", f.toString());
+                    Toast.makeText(this, "FACE DETECTED", Toast.LENGTH_SHORT).show();
+                }
+                return mRgba;
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+
+        }
+        return null;
+    }
+
+    /**
+     * A native method that is implemented by the 'native-lib' native library,
+     * which is packaged with this application.
+     */
     // Used to load the 'native-lib' library on application startup.
     static {
         System.loadLibrary("native-lib");
     }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        Log.i(TAG, "onResume");
+        if (OpenCVLoader.initDebug()) {
+            Log.i(TAG, "OpenCV successfully initialized");
+            //mLoaderCallback.onManagerConnected(LoaderCallbackInterface.SUCCESS);
+        }
+        else{
+            Log.i(TAG, "OPenCV initialization failed");
+        }
+    }
+
 }
