@@ -3,6 +3,7 @@ package com.example.dexel.camera;
 import android.Manifest;
 import android.content.Context;
 import android.content.pm.PackageManager;
+import android.graphics.Bitmap;
 import android.graphics.SurfaceTexture;
 import android.hardware.camera2.CameraAccessException;
 import android.hardware.camera2.CameraCaptureSession;
@@ -123,6 +124,8 @@ public class MainActivity extends AppCompatActivity {
 
 
     }
+
+
 
     private void initializeDependencies() {
         try{
@@ -295,6 +298,7 @@ public class MainActivity extends AppCompatActivity {
             }
         }
     }
+
     private int frameNum = 0;
     CameraCaptureSession.CaptureCallback captureCallback = new CameraCaptureSession.CaptureCallback() {
 
@@ -302,24 +306,21 @@ public class MainActivity extends AppCompatActivity {
             public void onCaptureCompleted(final CameraCaptureSession session, CaptureRequest request,
                                            TotalCaptureResult result) {
                 if (frameNum == 0) {
-                    //Log.d(TAG, "new thread");
-                    Thread t = new Thread(new Runnable() {
+                    final Bitmap b = textureView.getBitmap();
+                    new Thread(new Runnable() {
                         @Override
                         public void run() {
+                            //Log.i(TAG, "Recognition running " + Thread.currentThread().getId());
                             Mat toRecognize = new Mat();
-
-
-                            Utils.bitmapToMat(textureView.getBitmap(), toRecognize);
+                            Utils.bitmapToMat(b, toRecognize);
                             ImageProcessing(toRecognize);
                         }
 
                     }
-                    );
-                    t.run();
+                    ).start();
                     frameNum++;
                 }
                 else{
-                    //Log.d(TAG, "increase counter");
                     frameNum = (frameNum + 1) % 60;
                 }
 
@@ -334,7 +335,7 @@ public class MainActivity extends AppCompatActivity {
                 @Override
                 public void onConfigured(@NonNull CameraCaptureSession session) {
                     try {
-                        CaptureRequest.Builder captureRequestBuilder = mCamera.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW);
+                        CaptureRequest.Builder captureRequestBuilder = mCamera.createCaptureRequest(CameraDevice.TEMPLATE_RECORD);
                         captureRequestBuilder.addTarget(mRecorder.getSurface());
                         captureRequestBuilder.addTarget(surface);
 
@@ -455,7 +456,13 @@ public class MainActivity extends AppCompatActivity {
 
                 for(Rect f : detectedFaces.toList()){
                     Log.i("Face Detected: ", f.toString());
-                    Toast.makeText(this, "FACE DETECTED", Toast.LENGTH_SHORT).show();
+                    runOnUiThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            Toast.makeText(MainActivity.this, "FACE DETECTED", Toast.LENGTH_SHORT).show();
+                        }
+                    });
+
                 }
                 return mRgba;
             } catch (Exception e) {
