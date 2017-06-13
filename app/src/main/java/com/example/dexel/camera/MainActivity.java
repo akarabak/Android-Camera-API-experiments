@@ -6,7 +6,12 @@ import android.content.Context;
 import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
+import android.graphics.Canvas;
+import android.graphics.Color;
 import android.graphics.Matrix;
+import android.graphics.Paint;
+import android.graphics.PixelFormat;
+import android.graphics.PorterDuff;
 import android.graphics.RectF;
 import android.graphics.SurfaceTexture;
 import android.hardware.camera2.CameraAccessException;
@@ -81,10 +86,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private final static int MY_STORAGE_PERMISSIONS = 2;
     private final static int MY_MIC_PERMISSIONS = 3;
 
-
-    SurfaceHolder surfaceHolder = null;
-    SurfaceView surfaceView = null;
-
     Camera mCamera = null;
 
 
@@ -144,8 +145,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 //            }
 //        });
 
-        surfaceView = (SurfaceView) findViewById(R.id.surfaceView);
-        surfaceHolder = surfaceView.getHolder();
+        SurfaceView surfaceView = (SurfaceView) findViewById(R.id.surfaceView);
+        SurfaceHolder surfaceHolder = surfaceView.getHolder();
         surfaceHolder.addCallback(this);
 
     }
@@ -290,6 +291,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         }
     }
 
+
+
     @Override
     public void surfaceCreated(SurfaceHolder holder) {
         surface = holder.getSurface();
@@ -299,7 +302,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 
     @Override
     public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {
-
+        Log.i(TAG, "changed");
     }
 
     @Override

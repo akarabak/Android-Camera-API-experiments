@@ -2,18 +2,23 @@ package com.example.dexel.camera;
 
 import android.app.Activity;
 import android.content.Context;
+import android.graphics.Bitmap;
+import android.graphics.Matrix;
 import android.hardware.camera2.CameraAccessException;
 import android.hardware.camera2.CameraCaptureSession;
 import android.hardware.camera2.CameraCharacteristics;
 import android.hardware.camera2.CameraDevice;
 import android.hardware.camera2.CameraManager;
 import android.hardware.camera2.CaptureRequest;
+import android.hardware.camera2.CaptureResult;
 import android.hardware.camera2.TotalCaptureResult;
+import android.hardware.camera2.params.Face;
 import android.media.CamcorderProfile;
 import android.media.MediaRecorder;
 import android.os.Environment;
 import android.support.annotation.NonNull;
 import android.util.Log;
+import android.view.MotionEvent;
 import android.view.Surface;
 import android.widget.Toast;
 
@@ -245,34 +250,41 @@ public class Camera {
         public void onCaptureCompleted(final CameraCaptureSession session, final CaptureRequest request,
                                        final TotalCaptureResult result) {
 
-//            if (frameNum == 0) {
-//                Log.i(TAG, "onCaptureCompleted");
-//                final Bitmap b = textureView.getBitmap();
-//                new Thread(new Runnable() {
-//                    @Override
-//                    public void run() {
-//                        //Log.i(TAG, "Recognition running " + Thread.currentThread().getId());
-//                        Mat toRecognize = new Mat();
-//                        Utils.bitmapToMat(b, toRecognize);
-//                        ImageProcessing(toRecognize);
-//
-//
-//                        int mode = result.get(CaptureResult.STATISTICS_FACE_DETECT_MODE);
-//
-//                        Face[] faces = result.get(CaptureResult.STATISTICS_FACES);
-//                        for (Face f : faces){
-//                            Log.i(TAG, "FACE: " + f.toString());
-//                            android.graphics.Rect rect = f.getBounds();
-//
-//                        }
-//                    }
-//
-//                }
-//                ).start();
-//                frameNum++;
-//            } else {
-//                frameNum = (frameNum + 1) % 60;
-//            }
+            if (frameNum == 0) {
+                Log.i(TAG, "onCaptureCompleted");
+                //final Bitmap b = textureView.getBitmap();
+                new Thread(new Runnable() {
+                    @Override
+                    public void run() {
+                        //Log.i(TAG, "Recognition running " + Thread.currentThread().getId());
+                        Mat toRecognize = new Mat();
+                        //Utils.bitmapToMat(b, toRecognize);
+                        ImageProcessing(toRecognize);
+
+
+                        int mode = result.get(CaptureResult.STATISTICS_FACE_DETECT_MODE);
+
+                        Face[] faces = result.get(CaptureResult.STATISTICS_FACES);
+                        for (final Face f : faces){
+                            Log.i(TAG, "FACE: " + f.toString());
+
+                            mActivity.runOnUiThread(new Runnable() {
+                                @Override
+                                public void run() {
+                                    CustomSurface s = (CustomSurface) mActivity.findViewById(R.id.surfaceView2);
+                                    s.onDetectEvent(f);
+                                }
+                            });
+
+                        }
+                    }
+
+                }
+                ).start();
+                frameNum++;
+            } else {
+                frameNum = (frameNum + 1) % 60;
+            }
 
 
         }
@@ -335,7 +347,7 @@ public class Camera {
         }
     }
 
-    private void ImageProcessing(Mat rgb) {
+    private boolean ImageProcessing(Mat rgb) {
         Mat gray = new Mat();
         if (rgb != null && !rgb.empty()) {
             Imgproc.cvtColor(rgb, gray, Imgproc.COLOR_RGB2GRAY);
@@ -361,6 +373,7 @@ public class Camera {
 
         }
 
+        return false;
     }
 }
 
